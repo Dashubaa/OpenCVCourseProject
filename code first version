@@ -1,0 +1,58 @@
+#include <opencv2/opencv.hpp>
+#include <iostream>
+#include "mpi.h"
+
+using namespace cv;
+using namespace std;
+
+#define n 1000
+
+int main(int argc, char** argv) {
+
+    MPI_Init(&argc, &argv); // Инициализация MPI
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    Mat img = imread("monkey.jpg"); // загрузить изображение
+
+    Mat grayscale_image;
+    cvtColor(img, grayscale_image, COLOR_BGR2GRAY); // преобразование в ч/б изображение
+    Mat resized_image;
+    resize(grayscale_image, resized_image, Size(n, n), 0, 0, INTER_LINEAR); // преобразовать изображение в n*n
+    
+
+
+    if (img.empty()) { // проверить, что изображение не пустое
+        std::cout << "Could not load image" << std::endl;
+        return -1;
+    }
+    
+    Mat rotated_img;
+
+    if (rank == 0) {
+       // resized_image = Mat(n, n, CV_8UC1);
+        rotated_img = Mat(n, n, CV_8UC1); // создать матрицу для хранения целостного изображения
+    }
+
+    int chunk_size = n / size; // размер части изображения для каждого узла
+    Mat sub_image = resized_image(Rect(0, rank * chunk_size, n, chunk_size)); // выбрать часть изображения для обработки на текущем узле
+
+   
+    rotate(sub_image, sub_image, ROTATE_90_CLOCKWISE); // перевернуть на 90 градусов по часовой стрелке
+   
+
+    MPI_Gather(sub_image.data, n * chunk_size, MPI_UNSIGNED_CHAR, rotated_img.data, n * chunk_size, MPI_BYTE, 0, MPI_COMM_WORLD); // собрать результаты на узле 0
+
+    if (rank == 0) {
+        imshow("Rotated Image", rotated_img); // показать изображение
+
+        int k = waitKey(0); // ожидать нажатия клавиши
+        if (k == 's') {
+            imwrite("output.jpg", rotated_img);
+        }
+    }
+
+    MPI_Finalize(); // Завершение работы MPI
+    return 0;
+}
